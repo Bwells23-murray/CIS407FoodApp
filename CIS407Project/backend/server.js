@@ -4,9 +4,9 @@ const crypto = require('crypto');
 const express = require('express'); // <-- Import Express
 
 //Server Setup
-const app = express(); // <-- Create the Express app
-app.use(express.json()); // <-- IMPORTANT: This lets your server read JSON from requests
-const PORT = 5000; // <-- The port your server will run on
+const app = express(); 
+app.use(express.json()); // server reads JSON from requests
+const PORT = 5000; // server port
 
 // this connects to the database
 const db = new sqlite3.Database('./food_app.db', (err) => {
@@ -67,10 +67,9 @@ async function loginUser(username, password) {
 
 // Registration Endpoint 
 app.post('/register', async (req, res) => {
-    // 'req.body' holds the JSON data your app sends
+   
     const { username, email, password } = req.body;
 
-    // A simple check to make sure you got all the data
     if (!username || !email || !password) {
         return res.status(400).json({ error: 'Username, email, and password are required' });
     }
