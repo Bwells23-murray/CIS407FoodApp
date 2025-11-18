@@ -159,6 +159,82 @@ app.post('/order', (req, res) => {
     });
 });
 
+// Order History Endpoint 
+// --- 5. Get Order History (With Items!) ---
+// GET request to http://localhost:3000/my-orders/1
+app.get('/my-orders/:userId', (req, res) => {
+    const userId = req.params.userId;
+
+    const sql = `
+        SELECT 
+            o.order_id, o.status, o.total_amount, o.order_time,
+            m.name, oi.quantity, oi.price_per_item
+        FROM orders o
+        JOIN order_items oi ON o.order_id = oi.order_id
+        JOIN menu_items m ON oi.item_id = m.item_id
+        WHERE o.user_id = ?
+        ORDER BY o.order_time DESC
+    `;
+
+    db.all(sql, [userId], (err, rows) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+
+        const ordersMap = {};
+
+        rows.forEach(row => {
+            if (!ordersMap[row.order_id]) {
+                ordersMap[row.order_id] = {
+                    orderId: row.order_id,
+                    status: row.status,
+                    total: row.total_amount,
+                    date: row.order_time,
+                    items: [] 
+                };
+            }
+
+            ordersMap[row.order_id].items.push({
+                name: row.name,
+                quantity: row.quantity,
+                price: row.price_per_item
+            });
+        });
+
+        const ordersList = Object.values(ordersMap);
+
+        res.json(ordersList);
+    });
+});
+
+// Update Order Status Endpoint 
+// PATCH request to http://localhost:5000/order/1 
+// (this is also for postman, but you might need this one more than me)
+// this will be important for the admin panel to update the order status
+// tbh instead of making the admin type in each new status if you could hardcode some buttons i think that would be user friendly
+// Body: { "status": "completed" }
+app.patch('/order/:orderId', (req, res) => {
+    const orderId = req.params.orderId;
+    const { status } = req.body;
+
+    const allowedStatuses = ['pending', 'in_progress', 'completed', 'cancelled'];
+    if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({ error: "Invalid status value" });
+    }
+
+    const sql = "UPDATE orders SET status = ? WHERE order_id = ?";
+
+    db.run(sql, [status, orderId], function(err) {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        if (this.changes === 0) {
+            return res.status(404).json({ error: "Order not found" });
+        }
+        res.json({ message: `Order ${orderId} updated to ${status}` });
+    });
+});
+
 //  START THE SERVER
 app.listen(PORT, () => {
     console.log(`Server is running and listening on http://localhost:${PORT}`);
