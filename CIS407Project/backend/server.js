@@ -235,6 +235,69 @@ app.patch('/order/:orderId', (req, res) => {
     });
 });
 
+// Stuff for the Admin Panel 
+
+// Add new menu item 
+// POST request to http://localhost:5000/menu-items
+app.post('/menu-items', (req, res) => {
+    const { name, description, price, category } = req.body;
+
+    const sql = "INSERT INTO menu_items (name, description, price, category) VALUES (?, ?, ?, ?)";
+    
+    db.run(sql, [name, description, price, category], function(err) {
+        if (err) return res.status(400).json({ error: err.message });
+        res.status(201).json({ message: "Item added", itemId: this.lastID });
+    });
+});
+
+// Delete Menu Item 
+// DELETE request to http://localhost:5000/menu-items/10 (5 is the item id)
+app.delete('/menu-items/:id', (req, res) => {
+    const itemId = req.params.id;
+    
+    const sql = "DELETE FROM menu_items WHERE item_id = ?";
+    
+    db.run(sql, [itemId], function(err) {
+        if (err) return res.status(400).json({ error: err.message });
+        res.json({ message: `Item ${itemId} deleted` });
+    });
+});
+
+// Get Single Menu Item (this pairs with the edit function and a function you need on
+// the frontend to get the item details to prefill the edit form)
+// GET request to http://localhost:5000/menu-items/10
+app.get('/menu-items/:id', (req, res) => {
+    const itemId = req.params.id;
+    const sql = "SELECT * FROM menu_items WHERE item_id = ?";
+    
+    db.get(sql, [itemId], (err, row) => {
+        if (err) return res.status(400).json({ error: err.message });
+        if (!row) return res.status(404).json({ message: "Item not found" });
+        
+        res.json(row);
+    });
+});
+
+// Edit menu items 
+// PUT request to http://localhost:5000/menu-items/10 (1 is the item id)
+// Body: { "name": "Updated Burger", "description": "Now with extra cheese", "price": 10.99, "category": "entree" }
+app.put('/menu-items/:id', (req, res) => {
+    const itemId = req.params.id;
+    const { name, description, price, category } = req.body;
+
+    const sql = "UPDATE menu_items SET name = ?, description = ?, price = ?, category = ? WHERE item_id = ?";
+
+    db.run(sql, [name, description, price, category, itemId], function(err) {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        if (this.changes === 0) {
+            return res.status(404).json({ error: "Menu item not found" });
+        }
+        res.json({ message: `Menu item ${itemId} updated successfully` });
+    });
+});
+
 //  START THE SERVER
 app.listen(PORT, () => {
     console.log(`Server is running and listening on http://localhost:${PORT}`);
