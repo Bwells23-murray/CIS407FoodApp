@@ -66,6 +66,7 @@ async function loginUser(username, password) {
 //  API ENDPOINTS 
 
 // Registration Endpoint 
+// this is just a note for myself for postman testing: http://localhost:5000/register
 app.post('/register', async (req, res) => {
    
     const { username, email, password } = req.body;
@@ -85,6 +86,7 @@ app.post('/register', async (req, res) => {
 
 
 // Login Endpoint 
+// this is just a note for myself for postman testing:  http://localhost:5000/login
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
@@ -93,17 +95,69 @@ app.post('/login', async (req, res) => {
     }
 
     try {
-        // Use the login function you already wrote!
+       
         const result = await loginUser(username, password);
-        // Send a "200 OK" success response
+       
         res.status(200).json(result);
 
     } catch (error) {
-        // If loginUser rejected, send an error
+        
         res.status(400).json({ error: error.toString() });
     }
 });
 
+//Menu Endpoint
+// this is just a note for myself for postman testing: GET http://localhost:5000/menu
+app.get('/menu', (req, res) => {
+
+    const sql = "SELECT * FROM menu_items";
+
+    db.all(sql, [], (err, rows) => {
+        if (err) {
+            
+            return res.status(400).json({ error: err.message });
+        }
+        
+        res.json(rows);
+    });
+});
+
+//Place Order Endpoint 
+// this is just a note for myself for postman testing: POST  http://localhost:3000/order
+app.post('/order', (req, res) => {
+    const { userId, items, totalAmount } = req.body;
+
+    // Basic validation
+    if (!userId || !items || items.length === 0) {
+        return res.status(400).json({ error: 'Missing userId or items' });
+    }
+
+  
+    const sqlOrder = "INSERT INTO orders (user_id, total_amount) VALUES (?, ?)";
+    
+    db.run(sqlOrder, [userId, totalAmount], function(err) {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+
+        const newOrderId = this.lastID; // 
+
+        // this part adds to our order_items table to link items to the order
+        const sqlItem = "INSERT INTO order_items (order_id, item_id, quantity, price_per_item) VALUES (?, ?, ?, ?)";
+        const stmt = db.prepare(sqlItem);
+
+        items.forEach(item => {
+            stmt.run(newOrderId, item.itemId, item.quantity, item.price);
+        });
+
+        stmt.finalize(); 
+
+        res.status(201).json({ 
+            message: 'Order placed successfully!', 
+            orderId: newOrderId 
+        });
+    });
+});
 
 //  START THE SERVER
 app.listen(PORT, () => {
