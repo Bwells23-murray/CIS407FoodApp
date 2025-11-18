@@ -34,15 +34,15 @@ CREATE TABLE order_items (
 );
 
 CREATE TABLE restaurants (
-restaurant_id INTEGER PRIMARY KEY AUTOINCREMENT,
-name VARCHAR(100) NOT NULL,
-address TEXT,
-phone VARCHAR(20)
+    restaurant_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(100) NOT NULL,
+    address TEXT,
+    phone VARCHAR(20)
 );
 
 CREATE TABLE delivery_personnel (
-delivery_person_id INTEGER PRIMARY KEY AUTOINCREMENT,
-name VARCHAR(100) NOT NULL,
-phone VARCHAR(20) UNIQUE,
-status VARCHAR(20) DEFAULT 'available' -- 'available', 'on_delivery', 'off_duty'
+    delivery_person_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) UNIQUE,
+    status VARCHAR(20) DEFAULT 'available' -- 'available', 'on_delivery', 'off_duty'
 );
