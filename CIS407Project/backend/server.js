@@ -22,6 +22,15 @@ function hashPassword(password) {
     return crypto.createHash('sha256').update(password).digest('hex');
 }
 
+function dbGet(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.get(sql, params, (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
+        });
+    });
+}
+
 // registration
 async function registerUser(username, email, password) {
     const lowerCaseUsername = username.toLowerCase();
@@ -63,7 +72,18 @@ async function loginUser(username, password) {
     });
 }
 
+function checkIsAdmin(req, res, next) {
 
+    const requestedUserId = req.body.userId || req.query.userId;
+    
+    const adminUserId = 2; 
+
+    if (requestedUserId && parseInt(requestedUserId) === adminUserId) {
+        next(); 
+    } else {
+        res.status(403).json({ error: 'Access Denied: Must be authenticated as Admin.' });
+    }
+}
 //  API ENDPOINTS 
 
 // Registration Endpoint 
@@ -125,83 +145,90 @@ app.get('/menu', (req, res) => {
 
 //Place Order Endpoint 
 // this is just a note for myself for postman testing: POST  http://localhost:5000/order
-app.post('/order', (req, res) => {
-    // CRITICAL: Ensure all five fields are destructured from req.body
-    const { userId, items, totalAmount, cardNumber, cardHolder } = req.body; 
+app.post('/order', async (req, res) => {
+    // CRITICAL: Ensure restaurantId is included in the request body
+    const { userId, items, totalAmount, cardNumber, cardHolder, restaurantId } = req.body; 
     
     const orderTotal = parseFloat(totalAmount);
 
-    // Validate ALL required fields are present
-    if (!userId || !items || items.length === 0 || !totalAmount || !cardNumber || !cardHolder || isNaN(orderTotal)) {
-        return res.status(400).json({ error: 'Missing required order or card details (userId, items, totalAmount, cardNumber, cardHolder).' });
+    if (!userId || !items || items.length === 0 || !totalAmount || !cardNumber || !cardHolder || !restaurantId || isNaN(orderTotal)) {
+        return res.status(400).json({ error: 'Missing required fields: userId, items, totalAmount, cardNumber, cardHolder, or restaurantId.' });
     }
 
-    // db.serialize() ensures that the sequential operations run in order
-    db.serialize(() => {
-        db.run("BEGIN TRANSACTION;");
+    // Function to handle rollbacks during the transaction process
+    const handleRollback = (err, status = 500, msg) => {
+        db.run("ROLLBACK;");
+        console.error("TRANSACTION ROLLED BACK:", err ? err.message : msg);
+        return res.status(status).json({ error: msg || 'A critical database error occurred. Transaction rolled back.' });
+    };
 
-        // Use a function to simplify error handling and rollback
-        const handleRollback = (err, status = 500, msg) => {
-            db.run("ROLLBACK;");
-            console.error("TRANSACTION ROLLED BACK:", err ? err.message : msg);
-            return res.status(status).json({ error: msg || 'A critical database error occurred. Transaction rolled back.' });
-        };
-        
-        // Step 1: Check card balance and ownership
-        const sqlCheckCard = `SELECT amount FROM payment_cards WHERE card_number = ? AND card_holder = ? AND user_id = ?;`;
-        
-        db.get(sqlCheckCard, [cardNumber, cardHolder, userId], (err, card) => {
-            if (err) return handleRollback(err, 500, 'Database error during card check.');
-            if (!card) return handleRollback(null, 400, 'Card details failed verification.');
+    db.serialize(async () => {
+        try {
+            db.run("BEGIN TRANSACTION;");
+
+            const driverSql = "SELECT delivery_person_id FROM restaurants WHERE restaurant_id = ?";
+            const restaurant = await dbGet(driverSql, [restaurantId]);
             
-            // Check for insufficient funds
+            if (!restaurant) throw new Error('Selected restaurant not found.');
+            const assignedDriverId = restaurant.delivery_person_id;
+
+            // Check card balance and ownership
+            const sqlCheckCard = `SELECT amount FROM payment_cards WHERE card_number = ? AND card_holder = ? AND user_id = ?;`;
+            const card = await dbGet(sqlCheckCard, [cardNumber, cardHolder, userId]);
+            
+            if (!card) throw new Error('Card details failed verification.');
+            
+            // Check for sufficient funds
             if (card.amount < orderTotal) {
                 return handleRollback(null, 402, `Transaction declined: Insufficient funds. Available: $${card.amount.toFixed(2)}`);
             }
 
-            // Step 2: Deduct funds
+            // Deduct funds
             const newBalance = card.amount - orderTotal;
             const sqlDeduct = `UPDATE payment_cards SET amount = ? WHERE card_number = ?;`;
+           
+            const fundDeductionResult = await new Promise((resolve, reject) => {
+                db.run(sqlDeduct, [newBalance.toFixed(2), cardNumber], function(err) {
+                    if (err) return reject(err);
+                    resolve(this.changes);
+                });
+            });
+
+            if (fundDeductionResult === 0) {
+                 return handleRollback(null, 500, 'Fund deduction failed to update card balance.');
+            }
+
+            const sqlOrder = "INSERT INTO orders (user_id, total_amount, payment_method, payment_status, restaurant_id, delivery_person_id) VALUES (?, ?, 'card', 'paid', ?, ?);";
             
-            db.run(sqlDeduct, [newBalance.toFixed(2), cardNumber], function(err) {
-                if (err) return handleRollback(err, 500, 'Database error during fund deduction update.');
+            const orderInsertionResult = await new Promise((resolve, reject) => {
+                db.run(sqlOrder, [userId, orderTotal, restaurantId, assignedDriverId], function(err) {
+                    if (err) return reject(err);
+                    resolve(this.lastID);
+                });
+            });
+            const newOrderId = orderInsertionResult; 
 
-                // CRITICAL FIX: Ensure 1 row was updated 
-                if (this.changes === 0) {
-                     return handleRollback(null, 500, 'Fund deduction failed to update card balance. Check card details.');
-                }
+            const sqlItem = "INSERT INTO order_items (order_id, item_id, quantity, price_per_item) VALUES (?, ?, ?, ?)";
+            const stmt = db.prepare(sqlItem);
 
-                // Step 3: Insert Order Record
-                const sqlOrder = "INSERT INTO orders (user_id, total_amount, payment_method, payment_status) VALUES (?, ?, 'card', 'paid');";
-                
-                db.run(sqlOrder, [userId, orderTotal], function(err) {
-                    if (err) return handleRollback(err, 500, 'Database error during order insertion.');
+            items.forEach(item => {
+                stmt.run(newOrderId, item.itemId, item.quantity, item.price);
+            });
 
-                    const newOrderId = this.lastID; 
-                    
-                    // Step 4: Insert Order Items
-                    const sqlItem = "INSERT INTO order_items (order_id, item_id, quantity, price_per_item) VALUES (?, ?, ?, ?)";
-                    const stmt = db.prepare(sqlItem);
-
-                    items.forEach(item => {
-                        stmt.run(newOrderId, item.itemId, item.quantity, item.price);
-                    });
-
-                    stmt.finalize(() => {
-                        // Step 5: Commit the Transaction and finish
-                        db.run("COMMIT;", (commitErr) => {
-                            if (commitErr) {
-                                return res.status(500).json({ error: 'Transaction failed to finalize. Data may be inconsistent.' });
-                            }
-                             res.status(201).json({ 
-                                message: `Order placed successfully! Funds deducted. New balance: $${newBalance.toFixed(2)}`, 
-                                orderId: newOrderId 
-                            });
-                        });
+            // Finalize statement and commit
+            stmt.finalize(() => {
+                db.run("COMMIT;", (commitErr) => {
+                    if (commitErr) throw commitErr;
+                    res.status(201).json({ 
+                        message: `Order placed successfully! Driver ${assignedDriverId} assigned. New balance: $${newBalance.toFixed(2)}`, 
+                        orderId: newOrderId 
                     });
                 });
             });
-        });
+
+        } catch (error) {
+            handleRollback(error, 500, error.message);
+        }
     });
 });
 
@@ -283,7 +310,7 @@ app.patch('/order/:orderId', (req, res) => {
 
 // View All Orders
 // GET request to http://localhost:5000/admin/orders
-app.get('/admin/orders', (req, res) => {
+app.get('/admin/orders', checkIsAdmin, (req, res) => {
     const sql = `
         SELECT 
             o.order_id, o.status, o.total_amount, o.order_time, o.payment_status, o.delivery_person_id,
@@ -324,20 +351,20 @@ app.get('/admin/orders', (req, res) => {
 
 // Add new menu item 
 // POST request to http://localhost:5000/admin/menu-items
-app.post('/admin/menu-items', (req, res) => {
-    const { name, description, price, category } = req.body;
-
-    const sql = "INSERT INTO menu_items (name, description, price, category) VALUES (?, ?, ?, ?)";
+app.post('/admin/menu-items', checkIsAdmin, (req, res) => {
+    const { name, description, price, category, image_url } = req.body; // <-- New variable
     
-    db.run(sql, [name, description, price, category], function(err) {
+    const sql = "INSERT INTO menu_items (name, description, price, category, image_url) VALUES (?, ?, ?, ?, ?)";
+    
+    db.run(sql, [name, description, price, category, image_url], function(err) {
         if (err) return res.status(400).json({ error: err.message });
         res.status(201).json({ message: "Item added", itemId: this.lastID });
     });
 });
 
 // Delete Menu Item 
-// DELETE request to http://localhost:5000/admin/menu-items/10 (5 is the item id)
-app.delete('/admin/menu-items/:id', (req, res) => {
+// DELETE request to http://localhost:5000/admin/menu-items/10 (10 is the item id this will need to be changed)
+app.delete('/admin/menu-items/:id', checkIsAdmin, (req, res) => {
     const itemId = req.params.id;
     
     const sql = "DELETE FROM menu_items WHERE item_id = ?";
@@ -351,9 +378,9 @@ app.delete('/admin/menu-items/:id', (req, res) => {
 // Get Single Menu Item (this pairs with the edit function and a function you need on
 // the frontend to get the item details to prefill the edit form)
 // GET request to http://localhost:5000/admin/menu-items/10
-app.get('/admin/menu-items/:id', (req, res) => {
+app.get('/admin/menu-items/:id', checkIsAdmin, (req, res) => {
     const itemId = req.params.id;
-    const sql = "SELECT * FROM menu_items WHERE item_id = ?";
+    const sql = "SELECT item_id, name, description, price, category, image_url FROM menu_items WHERE item_id = ?";
     
     db.get(sql, [itemId], (err, row) => {
         if (err) return res.status(400).json({ error: err.message });
@@ -366,19 +393,17 @@ app.get('/admin/menu-items/:id', (req, res) => {
 // Edit menu items 
 // PUT request to http://localhost:5000/admin/menu-items/10 (1 is the item id)
 // Body: { "name": "Updated Burger", "description": "Now with extra cheese", "price": 10.99, "category": "entree" }
-app.put('/admin/menu-items/:id', (req, res) => {
+app.put('/admin/menu-items/:id', checkIsAdmin, (req, res) => {
     const itemId = req.params.id;
-    const { name, description, price, category } = req.body;
+    const { name, description, price, category, image_url } = req.body; 
 
-    const sql = "UPDATE menu_items SET name = ?, description = ?, price = ?, category = ? WHERE item_id = ?";
+    const sql = "UPDATE menu_items SET name = ?, description = ?, price = ?, category = ?, image_url = ? WHERE item_id = ?";
 
-    db.run(sql, [name, description, price, category, itemId], function(err) {
+    db.run(sql, [name, description, price, category, image_url, itemId], function(err) {
         if (err) {
             return res.status(400).json({ error: err.message });
         }
-        if (this.changes === 0) {
-            return res.status(404).json({ error: "Menu item not found" });
-        }
+        if (this.changes === 0) return res.status(404).json({ error: "Menu item not found" });
         res.json({ message: `Menu item ${itemId} updated successfully` });
     });
 });

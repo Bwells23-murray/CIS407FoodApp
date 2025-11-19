@@ -44,5 +44,6 @@ CREATE TABLE delivery_personnel (
     delivery_person_id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR(100) NOT NULL,
     phone VARCHAR(20) UNIQUE,
-    status VARCHAR(20) DEFAULT 'available' -- 'available', 'on_delivery', 'off_duty'
+    status VARCHAR(20) DEFAULT 'available' -- 'available', 'on_delivery', 'off_duty' // we might just stick with forver
+                                             -- available for simplicity
 );
