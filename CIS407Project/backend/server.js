@@ -6,6 +6,10 @@ const express = require('express'); // <-- Import Express
 //Server Setup
 const app = express(); 
 app.use(express.json()); // server reads JSON from requests
+
+// Serve static files from the Assets folder
+app.use('/Assets', express.static('../Assets'));
+
 const PORT = 5000; // server port
 
 // this connects to the database
