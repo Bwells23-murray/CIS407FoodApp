@@ -41,7 +41,7 @@ class tkinterApp(tk.Tk):
  
         # iterating through a tuple consisting
         # of the different page layouts
-        for F in (StartPage, LoginPage, RegisterPage, MenuPage, CartPage, PaymentPage):
+        for F in (StartPage, LoginPage, RegisterPage, MenuPage, AdminMenuPage, CartPage, PaymentPage, ThankYou):
  
             frame = F(container, self)
  
@@ -249,6 +249,156 @@ class MenuPage(tk.Frame):
         logoutButton = ttk.Button(self, text="Logout", command=lambda: controller.show_frame(StartPage))
         logoutButton.grid(row=0, column=0, padx=10, pady=10)
 
+        adminButton = ttk.Button(self, text="Admin", command=lambda: controller.show_frame(AdminMenuPage))
+        adminButton.grid(row=0, column=1, padx=10, pady=10)
+    
+        canvas = tk.Canvas(self, borderwidth=0)
+        scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.menu_frame = tk.Frame(canvas)
+        
+        self.menu_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=self.menu_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.grid(row=1, column=0, columnspan=5, sticky="nsew", padx=10, pady=10)
+        scrollbar.grid(row=1, column=5, sticky="ns")
+        
+       
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=1)
+
+    def load_menu(self):
+        # Clear existing menu items
+        for widget in self.menu_frame.winfo_children():
+            widget.destroy()
+
+        api_url = f"{API_BASE_URL}/menu"
+        
+        try:
+            response = requests.get(api_url)
+            response.raise_for_status()
+            menu_items = response.json()
+            self.controller.menu_items = menu_items
+            
+            print(f"Loaded {len(menu_items)} menu items from API")
+            for item in menu_items:
+                print(f"  - {item.get('name')} (Category: {item.get('category')})")
+            
+            # Group items by category
+            categories = {}
+            for item in menu_items:
+                category = item.get('category', 'other')
+                if category not in categories:
+                    categories[category] = []
+                categories[category].append(item)
+            
+            print(f"\nGrouped into {len(categories)} categories: {list(categories.keys())}")
+            
+            # Display items by category
+            row_counter = 0
+            for category, items in categories.items():
+                # Category label
+                cat_label = ttk.Label(self.menu_frame, text=category.capitalize(), font=SMALLFONT)
+                cat_label.grid(row=row_counter, column=0, columnspan=2, padx=10, pady=5, sticky="w")
+                row_counter += 1
+                
+                # Items in this category
+                col = 0
+                for item in items:
+                    item_frame = tk.Frame(self.menu_frame, relief=tk.RIDGE, borderwidth=1)
+                    item_frame.grid(row=row_counter, column=col, padx=5, pady=5, sticky="nsew")
+                    
+                    # Load and display image
+                    image_url = item.get('image_url')
+                    if image_url:
+                        try:
+                            # for handling images in our application from our database
+                            if image_url.startswith('http://') or image_url.startswith('https://'):
+                                # Download image from URL
+                                img_response = requests.get(image_url, timeout=5)
+                                img_response.raise_for_status()
+                                img_data = Image.open(BytesIO(img_response.content))
+                            else:
+                                # Handle local file path
+                                # Get the directory of the current script
+                                script_dir = os.path.dirname(os.path.abspath(__file__))
+                                
+                                # Try different path combinations
+                                possible_paths = [
+                                    image_url,  # Absolute path
+                                    os.path.join(script_dir, image_url),  
+                                    os.path.join(script_dir, 'Assets', image_url),  # In Assets folder (all of ours are curretnly in there, but this offers use for when admins add)
+                                    os.path.join(script_dir, 'Assets', os.path.basename(image_url))  
+                                ]
+                                
+                                img_data = None
+                                for path in possible_paths:
+                                    if os.path.exists(path):
+                                        img_data = Image.open(path)
+                                        break
+                                
+                                if img_data is None:
+                                    raise FileNotFoundError(f"Image not found: {image_url}")
+                            
+                            # resize the images to be uniform, some of them will end up stretched rip
+                            img_data = img_data.resize((100, 100), Image.Resampling.LANCZOS)
+                            photo = ImageTk.PhotoImage(img_data)
+                            
+                            # Display image
+                            img_label = tk.Label(item_frame, image=photo)
+                            img_label.image = photo  
+                            img_label.pack(padx=5, pady=5)
+                        except Exception as e:
+                            # if our images fair to load show (no image)
+                            placeholder = ttk.Label(item_frame, text="[No Image]", foreground="gray")
+                            placeholder.pack(padx=5, pady=5)
+                            print(f"Error loading image for {item['name']}: {e}")
+                    
+                    name_label = ttk.Label(item_frame, text=item['name'], font=("Verdana", 9, "bold"))
+                    name_label.pack(padx=5, pady=2)
+                    
+                    price_label = ttk.Label(item_frame, text=f"${item['price']:.2f}")
+                    price_label.pack(padx=5, pady=2)
+                    
+                    add_btn = ttk.Button(item_frame, text="Add to Cart", 
+                                        command=lambda i=item: self.add_to_cart(i))
+                    add_btn.pack(padx=5, pady=5)
+                    
+                    col += 1
+                    if col > 1:  # 2 items per row for an kiosk feel likethey have at the mcdonalds 
+                        col = 0
+                        row_counter += 1
+                
+                if col != 0:  # Move to next row if we didn't complete the row
+                    row_counter += 1
+                    
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Error", f"Failed to load menu: {e}")
+
+    def add_to_cart(self, item):
+        print("Button clicked!")
+    
+    def go_to_cart(self):
+        self.controller.show_frame(CartPage)
+
+class AdminMenuPage(tk.Frame): 
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+        
+        label = ttk.Label(self, text ="Menu Items", font = LARGEFONT)
+        label.grid(row = 0, column = 2, padx = 10, pady = 10)
+
+        cartButton = ttk.Button(self, text="Cart", command = lambda : self.go_to_cart())
+        cartButton.grid(row = 0, column= 4, padx=10, pady=10)
+        
+        logoutButton = ttk.Button(self, text="Logout", command=lambda: controller.show_frame(StartPage))
+        logoutButton.grid(row=0, column=0, padx=10, pady=10)
+
     
         canvas = tk.Canvas(self, borderwidth=0)
         scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
@@ -394,7 +544,7 @@ class CartPage(tk.Frame):
 
 class PaymentPage(tk.Frame):
     def __init__(self, parent, controller):
-        tk.Frame.__init__(self, parent,)
+        tk.Frame.__init__(self, parent)
         label = ttk.Label(self, text ="Payment Options", font = LARGEFONT)
         label.grid(row = 0, column = 2, padx = 0, pady = 10)
 
@@ -404,6 +554,21 @@ class PaymentPage(tk.Frame):
         cardNumEntry = Entry(self, width=20)
         cardNumEntry.grid(row=1, column=2, padx=0, pady=10)
 
+        enterButton = ttk.Button(self, text="Enter", command=lambda : controller.show_frame(ThankYou))
+        enterButton.grid(row=4, column=2, padx=10, pady=5)
+
+        backButton = ttk.Button(self, text="Back", command=lambda: controller.show_frame(CartPage))
+        backButton.grid(row=5, column=2, padx=10, pady=5)
+
+
+class ThankYou(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        label = ttk.Label(self, text ="Thank You for Your Order.", font = LARGEFONT)
+        label.grid(row = 0, column = 2, padx = 0, pady = 10)
+
+        exitButton = ttk.Button(self, text="Exit", command=lambda: controller.show_frame(StartPage))
+        exitButton.grid(row=1, column=2, padx=0, pady=10)
 
         
  
