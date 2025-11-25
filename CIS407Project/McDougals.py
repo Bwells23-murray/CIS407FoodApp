@@ -249,7 +249,11 @@ class MenuPage(tk.Frame):
         logoutButton = ttk.Button(self, text="Logout", command=lambda: controller.show_frame(StartPage))
         logoutButton.grid(row=0, column=0, padx=10, pady=10)
 
-        adminButton = ttk.Button(self, text="Admin", command=lambda: controller.show_frame(AdminMenuPage))
+        def go_to_admin():
+            controller.frames[AdminMenuPage].load_menu()
+            controller.show_frame(AdminMenuPage)
+
+        adminButton = ttk.Button(self, text="Admin", command=go_to_admin)
         adminButton.grid(row=0, column=1, padx=10, pady=10)
     
         canvas = tk.Canvas(self, borderwidth=0)
@@ -390,14 +394,14 @@ class AdminMenuPage(tk.Frame):
         tk.Frame.__init__(self, parent)
         self.controller = controller
         
-        label = ttk.Label(self, text ="Menu Items", font = LARGEFONT)
+        label = ttk.Label(self, text ="Admin Menu Management", font = LARGEFONT)
         label.grid(row = 0, column = 2, padx = 10, pady = 10)
-
-        cartButton = ttk.Button(self, text="Cart", command = lambda : self.go_to_cart())
-        cartButton.grid(row = 0, column= 4, padx=10, pady=10)
+        
+        backButton = ttk.Button(self, text="Back to Menu", command=lambda: controller.show_frame(MenuPage))
+        backButton.grid(row=0, column=0, padx=10, pady=10)
         
         logoutButton = ttk.Button(self, text="Logout", command=lambda: controller.show_frame(StartPage))
-        logoutButton.grid(row=0, column=0, padx=10, pady=10)
+        logoutButton.grid(row=0, column=1, padx=10, pady=10)
 
     
         canvas = tk.Canvas(self, borderwidth=0)
@@ -512,10 +516,6 @@ class AdminMenuPage(tk.Frame):
                     price_label = ttk.Label(item_frame, text=f"${item['price']:.2f}")
                     price_label.pack(padx=5, pady=2)
                     
-                    add_btn = ttk.Button(item_frame, text="Add to Cart", 
-                                        command=lambda i=item: self.add_to_cart(i))
-                    add_btn.pack(padx=5, pady=5)
-                    
                     col += 1
                     if col > 1:  # 2 items per row for an kiosk feel likethey have at the mcdonalds 
                         col = 0
@@ -526,12 +526,6 @@ class AdminMenuPage(tk.Frame):
                     
         except requests.exceptions.RequestException as e:
             messagebox.showerror("Error", f"Failed to load menu: {e}")
-
-    def add_to_cart(self, item):
-        print("Button clicked!")
-    
-    def go_to_cart(self):
-        self.controller.show_frame(CartPage)
 
 class CartPage(tk.Frame): 
     def __init__(self, parent, controller):
