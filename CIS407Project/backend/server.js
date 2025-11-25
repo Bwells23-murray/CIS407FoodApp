@@ -143,6 +143,32 @@ app.get('/menu', (req, res) => {
     });
 });
 
+//Restaurants Endpoint
+// GET http://localhost:5000/restaurants
+app.get('/restaurants', (req, res) => {
+    const sql = "SELECT restaurant_id, name, location, delivery_person_id FROM restaurants";
+    
+    db.all(sql, [], (err, rows) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        res.json(rows);
+    });
+});
+
+//Delivery Personnel Endpoint
+// GET http://localhost:5000/delivery-personnel
+app.get('/delivery-personnel', (req, res) => {
+    const sql = "SELECT delivery_person_id, name, status FROM delivery_personnel";
+    
+    db.all(sql, [], (err, rows) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        res.json(rows);
+    });
+});
+
 //Place Order Endpoint 
 // this is just a note for myself for postman testing: POST  http://localhost:5000/order
 app.post('/order', async (req, res) => {
