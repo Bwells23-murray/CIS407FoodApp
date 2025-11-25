@@ -41,7 +41,7 @@ class tkinterApp(tk.Tk):
  
         # iterating through a tuple consisting
         # of the different page layouts
-        for F in (StartPage, LoginPage, RegisterPage, MenuPage, AdminMenuPage, CartPage, PaymentPage, ThankYou):
+        for F in (StartPage, LoginPage, RegisterPage, MenuPage, AdminMenuPage, AddPage, EditPage, CartPage, PaymentPage, ThankYou):
  
             frame = F(container, self)
  
@@ -403,6 +403,8 @@ class AdminMenuPage(tk.Frame):
         logoutButton = ttk.Button(self, text="Logout", command=lambda: controller.show_frame(StartPage))
         logoutButton.grid(row=0, column=1, padx=10, pady=10)
 
+        add_btn = ttk.Button(self, text="Add", command=lambda: controller.show_frame(AddPage))
+        add_btn.grid(row=0, column=3, padx=10, pady=10)
     
         canvas = tk.Canvas(self, borderwidth=0)
         scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
@@ -515,6 +517,12 @@ class AdminMenuPage(tk.Frame):
                     
                     price_label = ttk.Label(item_frame, text=f"${item['price']:.2f}")
                     price_label.pack(padx=5, pady=2)
+
+                    edit_btn = ttk.Button(item_frame, text="Edit", command = lambda : self.controller.show_frame(EditPage))
+                    edit_btn.pack(padx=5, pady=5)
+
+                    delete_btn = ttk.Button(item_frame, text="Delete")
+                    delete_btn.pack(padx=5, pady=5)
                     
                     col += 1
                     if col > 1:  # 2 items per row for an kiosk feel likethey have at the mcdonalds 
@@ -526,6 +534,72 @@ class AdminMenuPage(tk.Frame):
                     
         except requests.exceptions.RequestException as e:
             messagebox.showerror("Error", f"Failed to load menu: {e}")
+
+class AddPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        label = ttk.Label(self, text ="Add Item", font = LARGEFONT)
+        label.grid(row = 0, column = 2, padx = 10, pady = 10)
+
+        nameLabel = ttk.Label(self, text = "Item Name: ", font = SMALLFONT)
+        nameLabel.grid(row=1, column = 1, padx = 0, pady = 10)
+
+        nameEntry = Entry(self, width=20)
+        nameEntry.grid(row=1, column=2, padx=0, pady=10)
+
+        priceLabel = ttk.Label(self, text = "Item Price: ", font = SMALLFONT)
+        priceLabel.grid(row=2, column = 1, padx = 0, pady = 10)
+
+        priceEntry = Entry(self, width=20)
+        priceEntry.grid(row=2, column=2, padx=0, pady=10)
+
+        categoryLabel = ttk.Label(self, text = "Category: ", font = SMALLFONT)
+        categoryLabel.grid(row=3, column = 1, padx = 0, pady = 10)
+
+        categoryEntry = Entry(self, width=20)
+        categoryEntry.grid(row=3, column=2, padx=0, pady=10)
+
+        imageLabel = ttk.Label(self, text = "Item Image: ", font = SMALLFONT)
+        imageLabel.grid(row=4, column = 1, padx = 0, pady = 10)
+
+        imageEntry = Entry(self, width=20)
+        imageEntry.grid(row=4, column=2, padx=0, pady=10)
+
+        enterBtn = ttk.Button(self, text="Enter")
+        enterBtn.grid(row=5, column = 2, padx=0, pady = 10)
+
+class EditPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        label = ttk.Label(self, text ="Edit Item", font = LARGEFONT)
+        label.grid(row = 0, column = 2, padx = 10, pady = 10)
+
+        nameLabel = ttk.Label(self, text = "Item Name: ", font = SMALLFONT)
+        nameLabel.grid(row=1, column = 1, padx = 0, pady = 10)
+
+        nameEntry = Entry(self, width=20)
+        nameEntry.grid(row=1, column=2, padx=0, pady=10)
+
+        priceLabel = ttk.Label(self, text = "Item Price: ", font = SMALLFONT)
+        priceLabel.grid(row=2, column = 1, padx = 0, pady = 10)
+
+        priceEntry = Entry(self, width=20)
+        priceEntry.grid(row=2, column=2, padx=0, pady=10)
+
+        categoryLabel = ttk.Label(self, text = "Category: ", font = SMALLFONT)
+        categoryLabel.grid(row=3, column = 1, padx = 0, pady = 10)
+
+        categoryEntry = Entry(self, width=20)
+        categoryEntry.grid(row=3, column=2, padx=0, pady=10)
+
+        imageLabel = ttk.Label(self, text = "Item Image: ", font = SMALLFONT)
+        imageLabel.grid(row=4, column = 1, padx = 0, pady = 10)
+
+        imageEntry = Entry(self, width=20)
+        imageEntry.grid(row=4, column=2, padx=0, pady=10)
+
+        enterBtn = ttk.Button(self, text="Enter")
+        enterBtn.grid(row=5, column = 2, padx=0, pady = 10)
 
 class CartPage(tk.Frame): 
     def __init__(self, parent, controller):
