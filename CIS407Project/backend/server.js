@@ -74,7 +74,7 @@ async function loginUser(username, password) {
 
 function checkIsAdmin(req, res, next) {
 
-    const requestedUserId = req.body.userId || req.query.userId;
+    const requestedUserId = (req.body && req.body.userId) || (req.query && req.query.userId);
     
     const adminUserId = 3; 
 
@@ -393,11 +393,30 @@ app.post('/admin/menu-items', checkIsAdmin, (req, res) => {
 app.delete('/admin/menu-items/:id', checkIsAdmin, (req, res) => {
     const itemId = req.params.id;
     
-    const sql = "DELETE FROM menu_items WHERE item_id = ?";
-    
-    db.run(sql, [itemId], function(err) {
-        if (err) return res.status(400).json({ error: err.message });
-        res.json({ message: `Item ${itemId} deleted` });
+    // First check if item is in any orders
+    const checkSql = "SELECT COUNT(*) as count FROM order_items WHERE item_id = ?";
+    db.get(checkSql, [itemId], (err, row) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        
+        if (row.count > 0) {
+            return res.status(400).json({ 
+                error: `Cannot delete this item because it has been ordered ${row.count} time(s). Consider marking it as unavailable instead.` 
+            });
+        }
+        
+        // If no orders, proceed with deletion
+        const sql = "DELETE FROM menu_items WHERE item_id = ?";
+        db.run(sql, [itemId], function(err) {
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+            if (this.changes === 0) {
+                return res.status(404).json({ error: "Item not found" });
+            }
+            res.json({ message: `Item ${itemId} deleted` });
+        });
     });
 });
 

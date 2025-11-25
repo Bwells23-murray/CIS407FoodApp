@@ -580,14 +580,20 @@ class AdminMenuPage(tk.Frame):
         try:
             api_url = f"{API_BASE_URL}/admin/menu-items/{item['item_id']}"
             params = {'userId': self.controller.user_id}
+            print(f"Deleting item: {item['item_id']}, URL: {api_url}, params: {params}")
             response = requests.delete(api_url, params=params)
+            print(f"Response status: {response.status_code}")
+            print(f"Response body: {response.text}")
             response.raise_for_status()
             
             messagebox.showinfo("Success", f"{item['name']} deleted successfully!")
             self.load_menu()
             
         except requests.exceptions.RequestException as e:
-            messagebox.showerror("Error", "Failed to delete menu item")
+            print(f"Delete error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"Error response: {e.response.text}")
+            messagebox.showerror("Error", f"Failed to delete menu item: {str(e)}")
 
 class AddPage(tk.Frame):
     def __init__(self, parent, controller):
