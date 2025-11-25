@@ -251,8 +251,8 @@ class MenuPage(tk.Frame):
         logoutButton.grid(row=0, column=0, padx=10, pady=10)
 
         def go_to_admin():
-            # Check if user is admin (userId 2)
-            if controller.user_id == 2:
+            # Check if user is admin (userId 3)
+            if controller.user_id == 3:
                 controller.frames[AdminMenuPage].load_menu()
                 controller.show_frame(AdminMenuPage)
             else:
@@ -260,8 +260,6 @@ class MenuPage(tk.Frame):
 
         # Only show admin button if user is admin
         self.adminButton = ttk.Button(self, text="Admin", command=go_to_admin)
-        if controller.user_id == 2:
-            self.adminButton.grid(row=0, column=1, padx=10, pady=10)
     
         canvas = tk.Canvas(self, borderwidth=0)
         scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
@@ -286,6 +284,12 @@ class MenuPage(tk.Frame):
         # Clear existing menu items
         for widget in self.menu_frame.winfo_children():
             widget.destroy()
+
+        # Show/hide admin button based on user_id
+        if self.controller.user_id == 3:
+            self.adminButton.grid(row=0, column=1, padx=10, pady=10)
+        else:
+            self.adminButton.grid_forget()
 
         api_url = f"{API_BASE_URL}/menu"
         

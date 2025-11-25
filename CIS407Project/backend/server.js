@@ -76,7 +76,7 @@ function checkIsAdmin(req, res, next) {
 
     const requestedUserId = req.body.userId || req.query.userId;
     
-    const adminUserId = 2; 
+    const adminUserId = 3; 
 
     if (requestedUserId && parseInt(requestedUserId) === adminUserId) {
         next(); 
