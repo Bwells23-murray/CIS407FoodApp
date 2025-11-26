@@ -352,6 +352,7 @@ app.get('/admin/orders', checkIsAdmin, (req, res) => {
         if (err) return res.status(400).json({ error: err.message });
 
         const ordersMap = {};
+        const orderSequence = []; // Track order IDs in sequence
         rows.forEach(row => {
             if (!ordersMap[row.order_id]) {
                 ordersMap[row.order_id] = {
@@ -363,6 +364,7 @@ app.get('/admin/orders', checkIsAdmin, (req, res) => {
                     paymentStatus: row.payment_status,
                     items: []
                 };
+                orderSequence.push(row.order_id); // Preserve order
             }
             ordersMap[row.order_id].items.push({
                 name: row.name,
@@ -371,7 +373,8 @@ app.get('/admin/orders', checkIsAdmin, (req, res) => {
             });
         });
 
-        res.json(Object.values(ordersMap));
+        const ordersList = orderSequence.map(id => ordersMap[id]);
+        res.json(ordersList);
     });
 });
 

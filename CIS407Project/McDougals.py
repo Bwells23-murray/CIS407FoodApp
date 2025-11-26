@@ -42,7 +42,7 @@ class tkinterApp(tk.Tk):
  
         # iterating through a tuple consisting
         # of the different page layouts
-        for F in (StartPage, LoginPage, RegisterPage, MenuPage, AdminMenuPage, AddPage, EditPage, CartPage, RestaurantSelectionPage, PaymentPage, ThankYou):
+        for F in (StartPage, LoginPage, RegisterPage, MenuPage, AdminMenuPage, AdminOrdersPage, AddPage, EditPage, CartPage, RestaurantSelectionPage, PaymentPage, ThankYou):
  
             frame = F(container, self)
  
@@ -432,8 +432,11 @@ class AdminMenuPage(tk.Frame):
         logoutButton = ttk.Button(self, text="Logout", command=lambda: controller.show_frame(StartPage))
         logoutButton.grid(row=0, column=1, padx=10, pady=10)
 
+        ordersButton = ttk.Button(self, text="Orders", command=lambda: self.go_to_orders())
+        ordersButton.grid(row=0, column=3, padx=10, pady=10)
+
         add_btn = ttk.Button(self, text="Add", command=lambda: controller.show_frame(AddPage))
-        add_btn.grid(row=0, column=3, padx=10, pady=10)
+        add_btn.grid(row=0, column=4, padx=10, pady=10)
     
         canvas = tk.Canvas(self, borderwidth=0)
         scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
@@ -594,6 +597,143 @@ class AdminMenuPage(tk.Frame):
             if hasattr(e, 'response') and e.response is not None:
                 print(f"Error response: {e.response.text}")
             messagebox.showerror("Error", f"Failed to delete menu item: {str(e)}")
+    
+    def go_to_orders(self):
+        self.controller.frames[AdminOrdersPage].load_orders()
+        self.controller.show_frame(AdminOrdersPage)
+
+class AdminOrdersPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+        
+        label = ttk.Label(self, text="Manage Orders", font=LARGEFONT)
+        label.grid(row=0, column=2, padx=10, pady=10)
+        
+        backButton = ttk.Button(self, text="Back to Admin", command=lambda: controller.show_frame(AdminMenuPage))
+        backButton.grid(row=0, column=0, padx=10, pady=10)
+        
+        logoutButton = ttk.Button(self, text="Logout", command=lambda: controller.show_frame(StartPage))
+        logoutButton.grid(row=0, column=1, padx=10, pady=10)
+        
+        # Canvas for scrolling orders
+        canvas = tk.Canvas(self, borderwidth=0)
+        scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.orders_frame = tk.Frame(canvas)
+        
+        self.orders_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=self.orders_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.grid(row=1, column=0, columnspan=5, sticky="nsew", padx=10, pady=10)
+        scrollbar.grid(row=1, column=5, sticky="ns")
+        
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=1)
+    
+    def load_orders(self):
+        # Clear existing orders
+        for widget in self.orders_frame.winfo_children():
+            widget.destroy()
+        
+        try:
+            api_url = f"{API_BASE_URL}/admin/orders"
+            params = {'userId': self.controller.user_id}
+            response = requests.get(api_url, params=params)
+            response.raise_for_status()
+            orders = response.json()
+            
+            if not orders:
+                empty_label = ttk.Label(self.orders_frame, text="No orders found", font=SMALLFONT)
+                empty_label.pack(pady=20)
+                return
+            
+            # Display orders (newest first - already sorted by API)
+            for order in orders:
+                self.create_order_widget(order)
+                
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Error", f"Failed to load orders: {e}")
+    
+    def create_order_widget(self, order):
+        order_frame = tk.Frame(self.orders_frame, relief=tk.RIDGE, borderwidth=2, padx=10, pady=10)
+        order_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Order header
+        header_frame = tk.Frame(order_frame)
+        header_frame.pack(fill=tk.X, pady=5)
+        
+        order_label = ttk.Label(header_frame, text=f"Order #{order['orderId']} - {order['username']}", 
+                               font=("Verdana", 11, "bold"))
+        order_label.pack(side=tk.LEFT)
+        
+        status_label = ttk.Label(header_frame, text=f"Status: {order['status']}", 
+                                font=("Verdana", 10))
+        status_label.pack(side=tk.LEFT, padx=20)
+        
+        total_label = ttk.Label(header_frame, text=f"Total: ${order['total']:.2f}", 
+                               font=("Verdana", 10))
+        total_label.pack(side=tk.LEFT, padx=20)
+        
+        date_label = ttk.Label(header_frame, text=f"{order['date']}", 
+                              font=("Verdana", 9), foreground="gray")
+        date_label.pack(side=tk.LEFT, padx=20)
+        
+        # Items section (collapsible)
+        items_frame = tk.Frame(order_frame)
+        items_frame.pack(fill=tk.X, pady=5)
+        
+        show_items = tk.BooleanVar(value=False)
+        
+        def toggle_items():
+            if show_items.get():
+                items_detail_frame.pack(fill=tk.X, pady=5)
+                toggle_btn.config(text="Hide Items")
+            else:
+                items_detail_frame.pack_forget()
+                toggle_btn.config(text="Show Items")
+            show_items.set(not show_items.get())
+        
+        toggle_btn = ttk.Button(items_frame, text="Show Items", command=toggle_items)
+        toggle_btn.pack(side=tk.LEFT)
+        
+        items_detail_frame = tk.Frame(order_frame, relief=tk.SUNKEN, borderwidth=1)
+        
+        for item in order['items']:
+            item_label = ttk.Label(items_detail_frame, 
+                                  text=f"  • {item['name']} x{item['quantity']} @ ${item['price']:.2f}")
+            item_label.pack(anchor=tk.W, padx=10, pady=2)
+        
+        # Status buttons
+        button_frame = tk.Frame(order_frame)
+        button_frame.pack(fill=tk.X, pady=5)
+        
+        if order['status'] == 'pending':
+            in_works_btn = ttk.Button(button_frame, text="Mark In the Works", 
+                                     command=lambda: self.update_order_status(order['orderId'], 'in_progress'))
+            in_works_btn.pack(side=tk.LEFT, padx=5)
+        
+        if order['status'] in ['pending', 'in_progress']:
+            complete_btn = ttk.Button(button_frame, text="Mark Completed", 
+                                     command=lambda: self.update_order_status(order['orderId'], 'completed'))
+            complete_btn.pack(side=tk.LEFT, padx=5)
+    
+    def update_order_status(self, order_id, new_status):
+        try:
+            api_url = f"{API_BASE_URL}/order/{order_id}"
+            payload = {'status': new_status}
+            response = requests.patch(api_url, json=payload)
+            response.raise_for_status()
+            
+            messagebox.showinfo("Success", f"Order #{order_id} updated to {new_status}")
+            self.load_orders()  # Reload orders to show updated status
+            
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Error", f"Failed to update order status: {e}")
 
 class AddPage(tk.Frame):
     def __init__(self, parent, controller):
