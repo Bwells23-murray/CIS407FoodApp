@@ -74,9 +74,9 @@ async function loginUser(username, password) {
 
 function checkIsAdmin(req, res, next) {
 
-    const requestedUserId = req.body.userId || req.query.userId;
+    const requestedUserId = (req.body && req.body.userId) || (req.query && req.query.userId);
     
-    const adminUserId = 2; 
+    const adminUserId = 3; 
 
     if (requestedUserId && parseInt(requestedUserId) === adminUserId) {
         next(); 
@@ -139,6 +139,32 @@ app.get('/menu', (req, res) => {
             return res.status(400).json({ error: err.message });
         }
         
+        res.json(rows);
+    });
+});
+
+//Restaurants Endpoint
+// GET http://localhost:5000/restaurants
+app.get('/restaurants', (req, res) => {
+    const sql = "SELECT restaurant_id, name, location, delivery_person_id FROM restaurants";
+    
+    db.all(sql, [], (err, rows) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        res.json(rows);
+    });
+});
+
+//Delivery Personnel Endpoint
+// GET http://localhost:5000/delivery-personnel
+app.get('/delivery-personnel', (req, res) => {
+    const sql = "SELECT delivery_person_id, name, status FROM delivery_personnel";
+    
+    db.all(sql, [], (err, rows) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
         res.json(rows);
     });
 });
@@ -326,6 +352,7 @@ app.get('/admin/orders', checkIsAdmin, (req, res) => {
         if (err) return res.status(400).json({ error: err.message });
 
         const ordersMap = {};
+        const orderSequence = []; // Track order IDs in sequence
         rows.forEach(row => {
             if (!ordersMap[row.order_id]) {
                 ordersMap[row.order_id] = {
@@ -337,6 +364,7 @@ app.get('/admin/orders', checkIsAdmin, (req, res) => {
                     paymentStatus: row.payment_status,
                     items: []
                 };
+                orderSequence.push(row.order_id); // Preserve order
             }
             ordersMap[row.order_id].items.push({
                 name: row.name,
@@ -345,7 +373,8 @@ app.get('/admin/orders', checkIsAdmin, (req, res) => {
             });
         });
 
-        res.json(Object.values(ordersMap));
+        const ordersList = orderSequence.map(id => ordersMap[id]);
+        res.json(ordersList);
     });
 });
 
@@ -367,11 +396,30 @@ app.post('/admin/menu-items', checkIsAdmin, (req, res) => {
 app.delete('/admin/menu-items/:id', checkIsAdmin, (req, res) => {
     const itemId = req.params.id;
     
-    const sql = "DELETE FROM menu_items WHERE item_id = ?";
-    
-    db.run(sql, [itemId], function(err) {
-        if (err) return res.status(400).json({ error: err.message });
-        res.json({ message: `Item ${itemId} deleted` });
+    // First check if item is in any orders
+    const checkSql = "SELECT COUNT(*) as count FROM order_items WHERE item_id = ?";
+    db.get(checkSql, [itemId], (err, row) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        
+        if (row.count > 0) {
+            return res.status(400).json({ 
+                error: `Cannot delete this item because it has been ordered ${row.count} time(s). Consider marking it as unavailable instead.` 
+            });
+        }
+        
+        // If no orders, proceed with deletion
+        const sql = "DELETE FROM menu_items WHERE item_id = ?";
+        db.run(sql, [itemId], function(err) {
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+            if (this.changes === 0) {
+                return res.status(404).json({ error: "Item not found" });
+            }
+            res.json({ message: `Item ${itemId} deleted` });
+        });
     });
 });
 

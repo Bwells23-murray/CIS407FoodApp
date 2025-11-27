@@ -6,4 +6,4 @@ requests>=2.31.0
 # Image processing library for displaying menu item images
 Pillow>=10.0.0
 
-# Note: tkinter comes pre-installed with Python, no need to install separately
+

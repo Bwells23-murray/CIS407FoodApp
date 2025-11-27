@@ -28,6 +28,7 @@ class tkinterApp(tk.Tk):
         self.username = None
         self.cart = []  # List to store cart items
         self.menu_items = []  # Store menu items from API
+        self.selected_restaurant_id = 1  # Default restaurant
         
         # creating a container
         container = tk.Frame(self)  
@@ -41,7 +42,7 @@ class tkinterApp(tk.Tk):
  
         # iterating through a tuple consisting
         # of the different page layouts
-        for F in (StartPage, LoginPage, RegisterPage, MenuPage, AdminMenuPage, AddPage, EditPage, CartPage, PaymentPage, ThankYou):
+        for F in (StartPage, LoginPage, RegisterPage, MenuPage, AdminMenuPage, AdminOrdersPage, AddPage, EditPage, CartPage, RestaurantSelectionPage, PaymentPage, ThankYou):
  
             frame = F(container, self)
  
@@ -250,11 +251,15 @@ class MenuPage(tk.Frame):
         logoutButton.grid(row=0, column=0, padx=10, pady=10)
 
         def go_to_admin():
-            controller.frames[AdminMenuPage].load_menu()
-            controller.show_frame(AdminMenuPage)
+            # Check if user is admin (userId 3)
+            if controller.user_id == 3:
+                controller.frames[AdminMenuPage].load_menu()
+                controller.show_frame(AdminMenuPage)
+            else:
+                messagebox.showerror("Access Denied", "You must be logged in as an admin to access this page.")
 
-        adminButton = ttk.Button(self, text="Admin", command=go_to_admin)
-        adminButton.grid(row=0, column=1, padx=10, pady=10)
+        # Only show admin button if user is admin
+        self.adminButton = ttk.Button(self, text="Admin", command=go_to_admin)
     
         canvas = tk.Canvas(self, borderwidth=0)
         scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
@@ -279,6 +284,12 @@ class MenuPage(tk.Frame):
         # Clear existing menu items
         for widget in self.menu_frame.winfo_children():
             widget.destroy()
+
+        # Show/hide admin button based on user_id
+        if self.controller.user_id == 3:
+            self.adminButton.grid(row=0, column=1, padx=10, pady=10)
+        else:
+            self.adminButton.grid_forget()
 
         api_url = f"{API_BASE_URL}/menu"
         
@@ -384,9 +395,27 @@ class MenuPage(tk.Frame):
             messagebox.showerror("Error", f"Failed to load menu: {e}")
 
     def add_to_cart(self, item):
-        print("Button clicked!")
+        # Add item to cart with quantity 1
+        existing_item = None
+        for cart_item in self.controller.cart:
+            if cart_item['item_id'] == item['item_id']:
+                existing_item = cart_item
+                break
+        
+        if existing_item:
+            existing_item['quantity'] += 1
+        else:
+            self.controller.cart.append({
+                'item_id': item['item_id'],
+                'name': item['name'],
+                'price': item['price'],
+                'quantity': 1
+            })
+        
+        messagebox.showinfo("Success", f"{item['name']} added to cart!")
     
     def go_to_cart(self):
+        self.controller.frames[CartPage].load_cart()
         self.controller.show_frame(CartPage)
 
 class AdminMenuPage(tk.Frame): 
@@ -403,8 +432,11 @@ class AdminMenuPage(tk.Frame):
         logoutButton = ttk.Button(self, text="Logout", command=lambda: controller.show_frame(StartPage))
         logoutButton.grid(row=0, column=1, padx=10, pady=10)
 
+        ordersButton = ttk.Button(self, text="Orders", command=lambda: self.go_to_orders())
+        ordersButton.grid(row=0, column=3, padx=10, pady=10)
+
         add_btn = ttk.Button(self, text="Add", command=lambda: controller.show_frame(AddPage))
-        add_btn.grid(row=0, column=3, padx=10, pady=10)
+        add_btn.grid(row=0, column=4, padx=10, pady=10)
     
         canvas = tk.Canvas(self, borderwidth=0)
         scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
@@ -518,10 +550,12 @@ class AdminMenuPage(tk.Frame):
                     price_label = ttk.Label(item_frame, text=f"${item['price']:.2f}")
                     price_label.pack(padx=5, pady=2)
 
-                    edit_btn = ttk.Button(item_frame, text="Edit", command = lambda : self.controller.show_frame(EditPage))
+                    edit_btn = ttk.Button(item_frame, text="Edit", 
+                                         command=lambda i=item: self.edit_item(i))
                     edit_btn.pack(padx=5, pady=5)
 
-                    delete_btn = ttk.Button(item_frame, text="Delete")
+                    delete_btn = ttk.Button(item_frame, text="Delete",
+                                           command=lambda i=item: self.delete_item(i))
                     delete_btn.pack(padx=5, pady=5)
                     
                     col += 1
@@ -534,6 +568,172 @@ class AdminMenuPage(tk.Frame):
                     
         except requests.exceptions.RequestException as e:
             messagebox.showerror("Error", f"Failed to load menu: {e}")
+    
+    def edit_item(self, item):
+        edit_page = self.controller.frames[EditPage]
+        edit_page.load_item(item)
+        self.controller.show_frame(EditPage)
+    
+    def delete_item(self, item):
+        result = messagebox.askyesno("Confirm Delete", 
+                                     f"Are you sure you want to delete {item['name']}?")
+        if not result:
+            return
+        
+        try:
+            api_url = f"{API_BASE_URL}/admin/menu-items/{item['item_id']}"
+            params = {'userId': self.controller.user_id}
+            print(f"Deleting item: {item['item_id']}, URL: {api_url}, params: {params}")
+            response = requests.delete(api_url, params=params)
+            print(f"Response status: {response.status_code}")
+            print(f"Response body: {response.text}")
+            response.raise_for_status()
+            
+            messagebox.showinfo("Success", f"{item['name']} deleted successfully!")
+            self.load_menu()
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Delete error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"Error response: {e.response.text}")
+            messagebox.showerror("Error", f"Failed to delete menu item: {str(e)}")
+    
+    def go_to_orders(self):
+        self.controller.frames[AdminOrdersPage].load_orders()
+        self.controller.show_frame(AdminOrdersPage)
+
+class AdminOrdersPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+        
+        label = ttk.Label(self, text="Manage Orders", font=LARGEFONT)
+        label.grid(row=0, column=2, padx=10, pady=10)
+        
+        backButton = ttk.Button(self, text="Back to Admin", command=lambda: controller.show_frame(AdminMenuPage))
+        backButton.grid(row=0, column=0, padx=10, pady=10)
+        
+        logoutButton = ttk.Button(self, text="Logout", command=lambda: controller.show_frame(StartPage))
+        logoutButton.grid(row=0, column=1, padx=10, pady=10)
+        
+        # Canvas for scrolling orders
+        canvas = tk.Canvas(self, borderwidth=0)
+        scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.orders_frame = tk.Frame(canvas)
+        
+        self.orders_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=self.orders_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.grid(row=1, column=0, columnspan=5, sticky="nsew", padx=10, pady=10)
+        scrollbar.grid(row=1, column=5, sticky="ns")
+        
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=1)
+    
+    def load_orders(self):
+        # Clear existing orders
+        for widget in self.orders_frame.winfo_children():
+            widget.destroy()
+        
+        try:
+            api_url = f"{API_BASE_URL}/admin/orders"
+            params = {'userId': self.controller.user_id}
+            response = requests.get(api_url, params=params)
+            response.raise_for_status()
+            orders = response.json()
+            
+            if not orders:
+                empty_label = ttk.Label(self.orders_frame, text="No orders found", font=SMALLFONT)
+                empty_label.pack(pady=20)
+                return
+            
+            # Display orders (newest first - already sorted by API)
+            for order in orders:
+                self.create_order_widget(order)
+                
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Error", f"Failed to load orders: {e}")
+    
+    def create_order_widget(self, order):
+        order_frame = tk.Frame(self.orders_frame, relief=tk.RIDGE, borderwidth=2, padx=10, pady=10)
+        order_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Order header
+        header_frame = tk.Frame(order_frame)
+        header_frame.pack(fill=tk.X, pady=5)
+        
+        order_label = ttk.Label(header_frame, text=f"Order #{order['orderId']} - {order['username']}", 
+                               font=("Verdana", 11, "bold"))
+        order_label.pack(side=tk.LEFT)
+        
+        status_label = ttk.Label(header_frame, text=f"Status: {order['status']}", 
+                                font=("Verdana", 10))
+        status_label.pack(side=tk.LEFT, padx=20)
+        
+        total_label = ttk.Label(header_frame, text=f"Total: ${order['total']:.2f}", 
+                               font=("Verdana", 10))
+        total_label.pack(side=tk.LEFT, padx=20)
+        
+        date_label = ttk.Label(header_frame, text=f"{order['date']}", 
+                              font=("Verdana", 9), foreground="gray")
+        date_label.pack(side=tk.LEFT, padx=20)
+        
+        # Items section (collapsible)
+        items_frame = tk.Frame(order_frame)
+        items_frame.pack(fill=tk.X, pady=5)
+        
+        show_items = tk.BooleanVar(value=False)
+        
+        def toggle_items():
+            if show_items.get():
+                items_detail_frame.pack(fill=tk.X, pady=5)
+                toggle_btn.config(text="Hide Items")
+            else:
+                items_detail_frame.pack_forget()
+                toggle_btn.config(text="Show Items")
+            show_items.set(not show_items.get())
+        
+        toggle_btn = ttk.Button(items_frame, text="Show Items", command=toggle_items)
+        toggle_btn.pack(side=tk.LEFT)
+        
+        items_detail_frame = tk.Frame(order_frame, relief=tk.SUNKEN, borderwidth=1)
+        
+        for item in order['items']:
+            item_label = ttk.Label(items_detail_frame, 
+                                  text=f"  • {item['name']} x{item['quantity']} @ ${item['price']:.2f}")
+            item_label.pack(anchor=tk.W, padx=10, pady=2)
+        
+        # Status buttons
+        button_frame = tk.Frame(order_frame)
+        button_frame.pack(fill=tk.X, pady=5)
+        
+        if order['status'] == 'pending':
+            in_works_btn = ttk.Button(button_frame, text="Mark In the Works", 
+                                     command=lambda: self.update_order_status(order['orderId'], 'in_progress'))
+            in_works_btn.pack(side=tk.LEFT, padx=5)
+        
+        if order['status'] in ['pending', 'in_progress']:
+            complete_btn = ttk.Button(button_frame, text="Mark Completed", 
+                                     command=lambda: self.update_order_status(order['orderId'], 'completed'))
+            complete_btn.pack(side=tk.LEFT, padx=5)
+    
+    def update_order_status(self, order_id, new_status):
+        try:
+            api_url = f"{API_BASE_URL}/order/{order_id}"
+            payload = {'status': new_status}
+            response = requests.patch(api_url, json=payload)
+            response.raise_for_status()
+            
+            messagebox.showinfo("Success", f"Order #{order_id} updated to {new_status}")
+            self.load_orders()  # Reload orders to show updated status
+            
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Error", f"Failed to update order status: {e}")
 
 class AddPage(tk.Frame):
     def __init__(self, parent, controller):
@@ -564,69 +764,423 @@ class AddPage(tk.Frame):
 
         imageEntry = Entry(self, width=20)
         imageEntry.grid(row=4, column=2, padx=0, pady=10)
+        
+        descLabel = ttk.Label(self, text = "Description: ", font = SMALLFONT)
+        descLabel.grid(row=5, column = 1, padx = 0, pady = 10)
 
-        enterBtn = ttk.Button(self, text="Enter")
-        enterBtn.grid(row=5, column = 2, padx=0, pady = 10)
+        descEntry = Entry(self, width=20)
+        descEntry.grid(row=5, column=2, padx=0, pady=10)
+
+        def add_item():
+            name = nameEntry.get()
+            price = priceEntry.get()
+            category = categoryEntry.get()
+            image_url = imageEntry.get()
+            description = descEntry.get()
+            
+            if not name or not price or not category:
+                messagebox.showerror("Error", "Please fill in name, price, and category")
+                return
+            
+            try:
+                price_float = float(price)
+            except ValueError:
+                messagebox.showerror("Error", "Price must be a number")
+                return
+            
+            payload = {
+                'userId': controller.user_id,
+                'name': name,
+                'description': description,
+                'price': price_float,
+                'category': category,
+                'image_url': image_url
+            }
+            
+            try:
+                api_url = f"{API_BASE_URL}/admin/menu-items"
+                response = requests.post(api_url, json=payload)
+                response.raise_for_status()
+                
+                messagebox.showinfo("Success", "Menu item added successfully!")
+                nameEntry.delete(0, tk.END)
+                priceEntry.delete(0, tk.END)
+                categoryEntry.delete(0, tk.END)
+                imageEntry.delete(0, tk.END)
+                descEntry.delete(0, tk.END)
+                
+                controller.frames[AdminMenuPage].load_menu()
+                controller.show_frame(AdminMenuPage)
+                
+            except requests.exceptions.RequestException as e:
+                messagebox.showerror("Error", "Failed to add menu item")
+
+        enterBtn = ttk.Button(self, text="Add Item", command=add_item)
+        enterBtn.grid(row=6, column = 2, padx=0, pady = 10)
+        
+        backBtn = ttk.Button(self, text="Back", command=lambda: controller.show_frame(AdminMenuPage))
+        backBtn.grid(row=7, column = 2, padx=0, pady = 10)
 
 class EditPage(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
+        self.controller = controller
+        self.current_item = None
+        
         label = ttk.Label(self, text ="Edit Item", font = LARGEFONT)
         label.grid(row = 0, column = 2, padx = 10, pady = 10)
 
         nameLabel = ttk.Label(self, text = "Item Name: ", font = SMALLFONT)
         nameLabel.grid(row=1, column = 1, padx = 0, pady = 10)
 
-        nameEntry = Entry(self, width=20)
-        nameEntry.grid(row=1, column=2, padx=0, pady=10)
+        self.nameEntry = Entry(self, width=20)
+        self.nameEntry.grid(row=1, column=2, padx=0, pady=10)
 
         priceLabel = ttk.Label(self, text = "Item Price: ", font = SMALLFONT)
         priceLabel.grid(row=2, column = 1, padx = 0, pady = 10)
 
-        priceEntry = Entry(self, width=20)
-        priceEntry.grid(row=2, column=2, padx=0, pady=10)
+        self.priceEntry = Entry(self, width=20)
+        self.priceEntry.grid(row=2, column=2, padx=0, pady=10)
 
         categoryLabel = ttk.Label(self, text = "Category: ", font = SMALLFONT)
         categoryLabel.grid(row=3, column = 1, padx = 0, pady = 10)
 
-        categoryEntry = Entry(self, width=20)
-        categoryEntry.grid(row=3, column=2, padx=0, pady=10)
+        self.categoryEntry = Entry(self, width=20)
+        self.categoryEntry.grid(row=3, column=2, padx=0, pady=10)
 
         imageLabel = ttk.Label(self, text = "Item Image: ", font = SMALLFONT)
         imageLabel.grid(row=4, column = 1, padx = 0, pady = 10)
 
-        imageEntry = Entry(self, width=20)
-        imageEntry.grid(row=4, column=2, padx=0, pady=10)
+        self.imageEntry = Entry(self, width=20)
+        self.imageEntry.grid(row=4, column=2, padx=0, pady=10)
+        
+        descLabel = ttk.Label(self, text = "Description: ", font = SMALLFONT)
+        descLabel.grid(row=5, column = 1, padx = 0, pady = 10)
 
-        enterBtn = ttk.Button(self, text="Enter")
-        enterBtn.grid(row=5, column = 2, padx=0, pady = 10)
+        self.descEntry = Entry(self, width=20)
+        self.descEntry.grid(row=5, column=2, padx=0, pady=10)
+
+        enterBtn = ttk.Button(self, text="Update Item", command=self.update_item)
+        enterBtn.grid(row=6, column = 2, padx=0, pady = 10)
+        
+        backBtn = ttk.Button(self, text="Back", command=lambda: controller.show_frame(AdminMenuPage))
+        backBtn.grid(row=7, column = 2, padx=0, pady = 10)
+    
+    def load_item(self, item):
+        self.current_item = item
+        self.nameEntry.delete(0, tk.END)
+        self.nameEntry.insert(0, item.get('name', ''))
+        self.priceEntry.delete(0, tk.END)
+        self.priceEntry.insert(0, str(item.get('price', '')))
+        self.categoryEntry.delete(0, tk.END)
+        self.categoryEntry.insert(0, item.get('category', ''))
+        self.imageEntry.delete(0, tk.END)
+        self.imageEntry.insert(0, item.get('image_url', ''))
+        self.descEntry.delete(0, tk.END)
+        self.descEntry.insert(0, item.get('description', ''))
+    
+    def update_item(self):
+        if not self.current_item:
+            messagebox.showerror("Error", "No item selected")
+            return
+        
+        name = self.nameEntry.get()
+        price = self.priceEntry.get()
+        category = self.categoryEntry.get()
+        image_url = self.imageEntry.get()
+        description = self.descEntry.get()
+        
+        if not name or not price or not category:
+            messagebox.showerror("Error", "Please fill in name, price, and category")
+            return
+        
+        try:
+            price_float = float(price)
+        except ValueError:
+            messagebox.showerror("Error", "Price must be a number")
+            return
+        
+        payload = {
+            'userId': self.controller.user_id,
+            'name': name,
+            'description': description,
+            'price': price_float,
+            'category': category,
+            'image_url': image_url
+        }
+        
+        try:
+            api_url = f"{API_BASE_URL}/admin/menu-items/{self.current_item['item_id']}"
+            response = requests.put(api_url, json=payload)
+            response.raise_for_status()
+            
+            messagebox.showinfo("Success", "Menu item updated successfully!")
+            self.controller.frames[AdminMenuPage].load_menu()
+            self.controller.show_frame(AdminMenuPage)
+            
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Error", "Failed to update menu item")
 
 class CartPage(tk.Frame): 
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
+        self.controller = controller
+        
+        # Top button bar
+        button_frame = tk.Frame(self)
+        button_frame.pack(fill=tk.X, pady=5)
+        
+        backButton = ttk.Button(button_frame, text="Back", command=lambda: controller.show_frame(MenuPage))
+        backButton.pack(side=tk.LEFT, padx=10)
+        
+        self.payButton = ttk.Button(button_frame, text="Proceed to Checkout", command=self.go_to_payment)
+        self.payButton.pack(side=tk.RIGHT, padx=10)
+        
         label = ttk.Label(self, text ="Cart Items", font = LARGEFONT)
-        label.grid(row = 0, column = 2, padx = 10, pady = 10)
+        label.pack(pady=10)
+        
+        # Canvas for scrolling cart items
+        canvas_frame = tk.Frame(self)
+        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        canvas = tk.Canvas(canvas_frame, borderwidth=0)
+        scrollbar = tk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+        self.cart_frame = tk.Frame(canvas)
+        
+        self.cart_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=self.cart_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.total_label = ttk.Label(self, text="Total: $0.00", font=LARGEFONT)
+        self.total_label.pack(pady=10)
+    
+    def load_cart(self):
+        # Clear existing cart display
+        for widget in self.cart_frame.winfo_children():
+            widget.destroy()
+        
+        if not self.controller.cart:
+            empty_label = ttk.Label(self.cart_frame, text="Your cart is empty", font=SMALLFONT)
+            empty_label.pack(pady=20)
+            self.total_label.config(text="Total: $0.00")
+            return
+        
+        total = 0
+        for idx, item in enumerate(self.controller.cart):
+            item_frame = tk.Frame(self.cart_frame, relief=tk.RIDGE, borderwidth=1)
+            item_frame.pack(fill=tk.X, padx=10, pady=5)
+            
+            name_label = ttk.Label(item_frame, text=item['name'], font=("Verdana", 10, "bold"))
+            name_label.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+            
+            qty_label = ttk.Label(item_frame, text=f"Qty: {item['quantity']}")
+            qty_label.grid(row=0, column=1, padx=10, pady=5)
+            
+            item_total = item['price'] * item['quantity']
+            price_label = ttk.Label(item_frame, text=f"${item_total:.2f}")
+            price_label.grid(row=0, column=2, padx=10, pady=5)
+            
+            remove_btn = ttk.Button(item_frame, text="Remove", 
+                                   command=lambda i=idx: self.remove_item(i))
+            remove_btn.grid(row=0, column=3, padx=10, pady=5)
+            
+            total += item_total
+        
+        self.total_label.config(text=f"Total: ${total:.2f}")
+    
+    def remove_item(self, index):
+        if 0 <= index < len(self.controller.cart):
+            self.controller.cart.pop(index)
+            self.load_cart()
+    
+    def go_to_payment(self):
+        print(f"Cart contents: {self.controller.cart}")
+        print(f"Cart length: {len(self.controller.cart)}")
+        
+        if not self.controller.cart:
+            messagebox.showerror("Error", "Your cart is empty!")
+            return
+        
+        print("Loading restaurants...")
+        self.controller.frames[RestaurantSelectionPage].load_restaurants()
+        print("Showing RestaurantSelectionPage...")
+        self.controller.show_frame(RestaurantSelectionPage)
 
-        payButton = ttk.Button(self, text = "Pay", command = lambda : controller.show_frame(PaymentPage))
-        payButton.grid(row = 4, column = 2, padx = 10, pady = 10)
+class RestaurantSelectionPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+        
+        label = ttk.Label(self, text ="Select Restaurant Location", font = LARGEFONT)
+        label.grid(row = 0, column = 2, padx = 10, pady = 10)
+        
+        backButton = ttk.Button(self, text="Back", command=lambda: controller.show_frame(CartPage))
+        backButton.grid(row=0, column=0, padx=10, pady=10)
+        
+        # Frame for restaurant selection
+        self.restaurant_frame = tk.Frame(self)
+        self.restaurant_frame.grid(row=1, column=0, columnspan=5, padx=20, pady=20)
+        
+        self.selected_restaurant = None
+        
+        continueButton = ttk.Button(self, text="Continue to Payment", command=self.continue_to_payment)
+        continueButton.grid(row=2, column=2, padx=10, pady=10)
+    
+    def load_restaurants(self):
+        # Clear existing restaurant buttons
+        for widget in self.restaurant_frame.winfo_children():
+            widget.destroy()
+        
+        try:
+            # Get restaurants from API
+            response = requests.get(f"{API_BASE_URL}/restaurants")
+            response.raise_for_status()
+            restaurants = response.json()
+            
+            # Get delivery personnel info
+            try:
+                drivers_response = requests.get(f"{API_BASE_URL}/delivery-personnel")
+                drivers_response.raise_for_status()
+                drivers_data = drivers_response.json()
+                print(f"Drivers response: {drivers_data}")
+                drivers = {driver['delivery_person_id']: driver['name'] 
+                          for driver in drivers_data}
+                print(f"Drivers dict: {drivers}")
+            except Exception as e:
+                print(f"Error fetching drivers: {e}")
+                drivers = {}
+            
+            # Create radio buttons for restaurant selection
+            self.selected_restaurant = tk.IntVar()
+            if restaurants:
+                self.selected_restaurant.set(restaurants[0]['restaurant_id'])
+            
+            for idx, restaurant in enumerate(restaurants):
+                driver_name = drivers.get(restaurant.get('delivery_person_id'), 'Not assigned')
+                
+                rb = ttk.Radiobutton(
+                    self.restaurant_frame,
+                    text=f"{restaurant['name']} - {restaurant['location']} (Driver: {driver_name})",
+                    variable=self.selected_restaurant,
+                    value=restaurant['restaurant_id']
+                )
+                rb.pack(anchor=tk.W, pady=5)
+                
+        except requests.exceptions.RequestException as e:
+            # Fallback to default restaurant if API fails
+            messagebox.showwarning("Warning", "Could not load restaurants. Using default location.")
+            self.selected_restaurant = tk.IntVar(value=1)
+    
+    def continue_to_payment(self):
+        if self.selected_restaurant is None:
+            messagebox.showerror("Error", "Please select a restaurant location")
+            return
+        
+        # Store selected restaurant in controller
+        self.controller.selected_restaurant_id = self.selected_restaurant.get()
+        
+        # Continue to payment
+        self.controller.frames[PaymentPage].prepare_payment()
+        self.controller.show_frame(PaymentPage)
 
 class PaymentPage(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
+        self.controller = controller
+        
         label = ttk.Label(self, text ="Payment Options", font = LARGEFONT)
         label.grid(row = 0, column = 2, padx = 0, pady = 10)
+        
+        self.total_label = ttk.Label(self, text="Total: $0.00", font=SMALLFONT)
+        self.total_label.grid(row=1, column=2, padx=10, pady=5)
 
         cardNumLabel = ttk.Label(self, text = "Card Number: ", font = SMALLFONT)
-        cardNumLabel.grid(row=1, column = 1, padx = 0, pady = 10)
+        cardNumLabel.grid(row=2, column = 1, padx = 0, pady = 10)
 
-        cardNumEntry = Entry(self, width=20)
-        cardNumEntry.grid(row=1, column=2, padx=0, pady=10)
+        self.cardNumEntry = Entry(self, width=20)
+        self.cardNumEntry.grid(row=2, column=2, padx=0, pady=10)
+        
+        cardHolderLabel = ttk.Label(self, text = "Card Holder: ", font = SMALLFONT)
+        cardHolderLabel.grid(row=3, column = 1, padx = 0, pady = 10)
 
-        enterButton = ttk.Button(self, text="Enter", command=lambda : controller.show_frame(ThankYou))
+        self.cardHolderEntry = Entry(self, width=20)
+        self.cardHolderEntry.grid(row=3, column=2, padx=0, pady=10)
+
+        enterButton = ttk.Button(self, text="Place Order", command=self.place_order)
         enterButton.grid(row=4, column=2, padx=10, pady=5)
 
         backButton = ttk.Button(self, text="Back", command=lambda: controller.show_frame(CartPage))
         backButton.grid(row=5, column=2, padx=10, pady=5)
+    
+    def prepare_payment(self):
+        total = sum(item['price'] * item['quantity'] for item in self.controller.cart)
+        self.total_label.config(text=f"Total: ${total:.2f}")
+    
+    def place_order(self):
+        card_number = self.cardNumEntry.get()
+        card_holder = self.cardHolderEntry.get()
+        
+        if not card_number or not card_holder:
+            messagebox.showerror("Error", "Please fill in all payment details")
+            return
+        
+        if not self.controller.user_id:
+            messagebox.showerror("Error", "Please login first")
+            return
+        
+        # Get selected restaurant ID
+        restaurant_id = getattr(self.controller, 'selected_restaurant_id', 1)
+        
+        # Calculate total
+        total = sum(item['price'] * item['quantity'] for item in self.controller.cart)
+        
+        # Prepare order items
+        items = [{
+            'itemId': item['item_id'],
+            'quantity': item['quantity'],
+            'price': item['price']
+        } for item in self.controller.cart]
+        
+        # API payload
+        payload = {
+            'userId': self.controller.user_id,
+            'items': items,
+            'totalAmount': total,
+            'cardNumber': card_number,
+            'cardHolder': card_holder,
+            'restaurantId': restaurant_id
+        }
+        
+        try:
+            api_url = f"{API_BASE_URL}/order"
+            response = requests.post(api_url, json=payload)
+            response.raise_for_status()
+            
+            result = response.json()
+            messagebox.showinfo("Success", result.get('message', 'Order placed successfully!'))
+            
+            # Clear cart and fields
+            self.controller.cart = []
+            self.cardNumEntry.delete(0, tk.END)
+            self.cardHolderEntry.delete(0, tk.END)
+            
+            self.controller.show_frame(ThankYou)
+            
+        except requests.exceptions.RequestException as e:
+            error_msg = "Order failed"
+            try:
+                error_data = e.response.json()
+                error_msg = error_data.get('error', error_msg)
+            except:
+                pass
+            messagebox.showerror("Order Failed", error_msg)
 
 
 class ThankYou(tk.Frame):
